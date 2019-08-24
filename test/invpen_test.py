@@ -4,10 +4,6 @@ import RPi.GPIO as GPIO
 import smbus
 import math
 from time import sleep
-import csv
-import os
-
-os.remove("data.csv")
 
 GPIO.setmode(GPIO.BCM)
 
@@ -43,7 +39,7 @@ gPowerI = 0
 gPowerD = 0
 
 V_MIN = 0
-V_MAX = 60 
+V_MAX = 70
 
 bus = smbus.SMBus(1)
 bus.write_byte_data(DEV_ADDR, PWR_MGMT_1, 0)
@@ -107,22 +103,9 @@ def move_stop():
     p3.ChangeDutyCycle(0)
 
 def calc():
-    global gPowerP
     global gPowerI
-    global gPowerD
-    tmp_ax = 0
-    tmp_ay = 0
-    tmp_az = 0
-    for i in range(20):
-        ax, ay, az = getAccel()
-        gx, gy, gz = getGyro()
-        tmp_ax += ax
-        tmp_ay += ay
-        tmp_az += az
-    ax = tmp_ax / 20
-    ay = tmp_ay / 20
-    az = tmp_az / 20
-     
+    ax, ay, az = getAccel()
+    gx, gy, gz = getGyro()
     #print 'accel[g]',
     #print 'x: %06.3f' % ax,
     #print 'y: %06.3f' % ay,
@@ -136,34 +119,21 @@ def calc():
     
     if az > 0:    
         theta,psi,phi = calc_slope_for_accel_3axis_deg(ax,ay,az)
-        #print 'θ=%06.3f' % theta,
-        #print 'Ψ=%06.3f' % psi,
-        #print 'Φ=%06.3f' % phi,
-        #print       # 改行.
-        #list = []
-        #list.append(theta)
-        #list.append(psi)
-        #list.append(phi)
-        #write_csv(list) 
+        print 'θ=%06.3f' % theta,
+        print 'Ψ=%06.3f' % psi,
+        print 'Φ=%06.3f' % phi,
+        print       # 改行.
+    
         gPowerP = (theta - gCalibrateY) / 90
         gPowerI += gPowerP
         gPowerD = gx / 250
-        #power = gPowerP * 17.0 + gPowerI * 1.5 + gPowerD * 2.0
-        power = gPowerP * 17.0 + gPowerI * 1.5 
-        #print 'gPowerP=%06.3f' % gPowerP 
-        #print 'gPowerI=%06.3f' % gPowerI 
-        #print 'gPowerD=%06.3f' % gPowerD
-        #print 
-        list = []
-        list.append(gCalibrateY)
-        list.append(theta)
-        list.append(gPowerP)
-        list.append(gPowerI)
-        list.append(gPowerD)
-        list.append(power)
-        write_csv(list) 
-        #print 'power=%06.3f' % power
-        #print
+        print 'gPowerP=%06.3f' % gPowerP 
+        print 'gPowerI=%06.3f' % gPowerI 
+        print 'gPowerD=%06.3f' % gPowerD
+        print 
+        power = gPowerP * 17.0 + gPowerI * 1.5 + gPowerD * 2.0;
+        print 'power=%06.3f' % power
+        print
         power = max(-1, min(1, power)); 
  
     else:
@@ -201,46 +171,16 @@ def calc_slope_for_accel_3axis_deg(x, y, z): # degree
     return [deg_theta, deg_psi, deg_phi]
 
 def setup():
-    global gCalibrateY
     sleep(5)
-    tmp_ax = 0
-    tmp_ay = 0
-    tmp_az = 0
-    for i in range(10):
-         ax, ay, az = getAccel()
-         tmp_ax += ax
-         tmp_ay += ay
-         tmp_az += az
-    ax = tmp_ax / 10
-    ay = tmp_ay / 10
-    az = tmp_az / 10
+    ax, ay, az = getAccel()
     theta,psi,phi = calc_slope_for_accel_3axis_deg(ax,ay,az)
    
     gCalibrateY = theta 
-    #print(gCalibrateY) 
-
-def write_csv(list):
-    with open('data.csv', 'a') as f:
-        writer = csv.writer(f, lineterminator='\n')
-        writer.writerow(list)
-
+    print(gCalibrateY) 
 try:
-    setup()
-
+    move_back(70) 
     while 1:
-        m_out = calc()
-        if m_out <= 0:
-            #print("forward")
-            m_out = V_MAX * abs(m_out)
-            #print(m_out)
-            move_back(m_out) 
-        else:
-            #print("back")
-            m_out = V_MAX * abs(m_out)
-            #print(m_out)
-            move_forward(m_out)
-        #sleep(0.1)
-        #move_stop()
+        p = calc()
 except KeyboardInterrupt:
     pass
 
