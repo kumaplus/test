@@ -4,6 +4,10 @@ import RPi.GPIO as GPIO
 import smbus
 import math
 from time import sleep
+import csv
+import os
+
+#os.remove("data.csv")
 
 GPIO.setmode(GPIO.BCM)
 
@@ -33,13 +37,26 @@ GYRO_ZOUT = 0x47
 PWR_MGMT_1 = 0x6b
 PWR_MGMT_2 = 0x6c   
 
-gCalibrateY = 0
-gPowerP = 0
-gPowerI = 0
-gPowerD = 0
-
-V_MIN = 0
-V_MAX = 70
+countS = 0
+recOmegaI = []
+omegaI = 0
+thetaI = 0
+sumPower = 0
+sumSumP = 0
+#kAngle = 50 
+#kOmega = 500 
+#kSpeed = 60 
+#kDistance = 20 
+kAngle = 50 
+kOmega = 500 
+kSpeed = 60 
+kDistance = 20 
+powerScale = 0
+power = 0
+vE5 = 0
+xE5 = 0
+SEN_CNT = 15 
+MTR = 70 
 
 bus = smbus.SMBus(1)
 bus.write_byte_data(DEV_ADDR, PWR_MGMT_1, 0)
@@ -82,65 +99,6 @@ def getAccel():
     z= read_word_sensor(ACCEL_ZOUT)/ 16384.0
     return [x, y, z]
 
-def move_forward(val):
-    p1.ChangeDutyCycle(0)
-    p0.ChangeDutyCycle(val)
-
-    p3.ChangeDutyCycle(0)
-    p2.ChangeDutyCycle(val)
-
-def move_back(val):
-    p0.ChangeDutyCycle(0)
-    p1.ChangeDutyCycle(val)
-
-    p2.ChangeDutyCycle(0)
-    p3.ChangeDutyCycle(val)
-
-def move_stop():
-    p0.ChangeDutyCycle(0)
-    p1.ChangeDutyCycle(0)
-    p2.ChangeDutyCycle(0)
-    p3.ChangeDutyCycle(0)
-
-def calc():
-    global gPowerI
-    ax, ay, az = getAccel()
-    gx, gy, gz = getGyro()
-    #print 'accel[g]',
-    #print 'x: %06.3f' % ax,
-    #print 'y: %06.3f' % ay,
-    #print 'z: %06.3f' % az,
-    #print '||',
-    #print 'gyro[deg/s]',
-    #print 'x: %08.3f' % gx,
-    #print 'y: %08.3f' % gy,
-    #print 'z: %08.3f' % gz,
-    #print 
-    
-    if az > 0:    
-        theta,psi,phi = calc_slope_for_accel_3axis_deg(ax,ay,az)
-        print 'θ=%06.3f' % theta,
-        print 'Ψ=%06.3f' % psi,
-        print 'Φ=%06.3f' % phi,
-        print       # 改行.
-    
-        gPowerP = (theta - gCalibrateY) / 90
-        gPowerI += gPowerP
-        gPowerD = gx / 250
-        print 'gPowerP=%06.3f' % gPowerP 
-        print 'gPowerI=%06.3f' % gPowerI 
-        print 'gPowerD=%06.3f' % gPowerD
-        print 
-        power = gPowerP * 17.0 + gPowerI * 1.5 + gPowerD * 2.0;
-        print 'power=%06.3f' % power
-        print
-        power = max(-1, min(1, power)); 
- 
-    else:
-        power= 0
-
-    return power 
-
 def calc_slope_for_accel_2axis_deg(x, y, z): # degree
     #
     # θ = atan(X軸出力加速度[g]/Y軸出力加速度[g])
@@ -171,16 +129,95 @@ def calc_slope_for_accel_3axis_deg(x, y, z): # degree
     return [deg_theta, deg_psi, deg_phi]
 
 def setup():
-    sleep(5)
-    ax, ay, az = getAccel()
-    theta,psi,phi = calc_slope_for_accel_3axis_deg(ax,ay,az)
-   
-    gCalibrateY = theta 
-    print(gCalibrateY) 
+    global recOmegaI
+
+    for i in range(10):
+        recOmegaI.append(0)
+     
+def write_csv(list):
+    with open('data.csv', 'a') as f:
+        writer = csv.writer(f, lineterminator='\n')
+        writer.writerow(list)
+
+def chkAndCtl():
+    global recOmegaI
+    global thetaI
+    global omegaI
+    global countS
+    global vE5
+    global xE5
+    global sumPower
+    global sumSumP
+    global power
+
+    R = 0;
+    for i in range(SEN_CNT):
+        gx, gy, gz = getGyro()
+        #print 'gyro[deg/s]',
+        #print 'x: %08.3f' % gx,
+        #print 'y: %08.3f' % gy,
+        #print 'z: %08.3f' % gz,
+        #print
+        R = R + gy 
+        #sleep(0.09)  
+    omegaI = R / SEN_CNT 
+    print("omegaI: " + str(omegaI))
+    if abs(omegaI) < 2:
+        omegaI = 0
+    recOmegaI[0] = omegaI
+    thetaI = thetaI + omegaI
+    countS = 0
+    for i in range(10):
+        if abs(recOmegaI[i]) < 4:
+            countS += 1
+
+    if countS > 9:
+        thetaI = 0 
+        vE5 = 0
+        xE5 = 0
+        sumPower = 0
+        sumSumP = 0
+    
+    for i in reversed(range(1,10)):
+        recOmegaI[i] = recOmegaI[i-1]
+
+    powerScale = (kAngle * thetaI / 100) + (kOmega * omegaI / 100) 
+    tmp = (kSpeed * vE5 / 1000) + (kDistance * xE5 / 1000)
+    powerScale += tmp
+    #power = max(min(95 * powerScale / 100, 255), -255)
+    power = max(min(95 * powerScale / 100, MTR), MTR * -1)
+    print 'power: %08.3f' % power 
+    sumPower = sumPower + power
+    sumSumP = sumSumP + sumPower
+    vE5 = sumPower
+    xE5 = sumSumP / 1000 
+
+def move_forward(val):
+    p1.ChangeDutyCycle(0)
+    p0.ChangeDutyCycle(val)
+
+    p3.ChangeDutyCycle(0)
+    p2.ChangeDutyCycle(val)
+
+def move_back(val):
+    p0.ChangeDutyCycle(0)
+    p1.ChangeDutyCycle(val)
+
+    p2.ChangeDutyCycle(0)
+    p3.ChangeDutyCycle(val)
+ 
 try:
-    move_back(20) 
+    setup()
+
     while 1:
-        p = calc()
+        chkAndCtl()
+        if power > 0:
+            print("back")
+            move_back(power)
+        else:
+            print("forward")
+            move_forward(abs(power)) 
+
 except KeyboardInterrupt:
     pass
 
