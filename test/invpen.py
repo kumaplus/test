@@ -42,8 +42,8 @@ gPowerP = 0
 gPowerI = 0
 gPowerD = 0
 
-V_MIN = 0
-V_MAX = 60 
+V_MIN = 20 
+V_MAX = 30 
 
 bus = smbus.SMBus(1)
 bus.write_byte_data(DEV_ADDR, PWR_MGMT_1, 0)
@@ -113,15 +113,15 @@ def calc():
     tmp_ax = 0
     tmp_ay = 0
     tmp_az = 0
-    for i in range(20):
+    for i in range(10):
         ax, ay, az = getAccel()
         gx, gy, gz = getGyro()
         tmp_ax += ax
         tmp_ay += ay
         tmp_az += az
-    ax = tmp_ax / 20
-    ay = tmp_ay / 20
-    az = tmp_az / 20
+    ax = tmp_ax / 10
+    ay = tmp_ay / 10
+    az = tmp_az / 10 
      
     #print 'accel[g]',
     #print 'x: %06.3f' % ax,
@@ -148,8 +148,7 @@ def calc():
         gPowerP = (theta - gCalibrateY) / 90
         gPowerI += gPowerP
         gPowerD = gx / 250
-        #power = gPowerP * 17.0 + gPowerI * 1.5 + gPowerD * 2.0
-        power = gPowerP * 17.0 + gPowerI * 1.5 
+        power = gPowerP * 25.0 + gPowerI * 1.0 + gPowerD * 8.0
         #print 'gPowerP=%06.3f' % gPowerP 
         #print 'gPowerI=%06.3f' % gPowerI 
         #print 'gPowerD=%06.3f' % gPowerD
@@ -231,12 +230,12 @@ try:
         m_out = calc()
         if m_out <= 0:
             #print("forward")
-            m_out = V_MAX * abs(m_out)
+            m_out = int((V_MAX-V_MIN) * abs(m_out) + V_MIN)
             #print(m_out)
             move_back(m_out) 
         else:
             #print("back")
-            m_out = V_MAX * abs(m_out)
+            m_out = int((V_MAX-V_MIN) * abs(m_out) + V_MIN)
             #print(m_out)
             move_forward(m_out)
         #sleep(0.1)
