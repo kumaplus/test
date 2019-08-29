@@ -4,6 +4,12 @@ import RPi.GPIO as GPIO
 import smbus
 import math
 from time import sleep
+import csv
+import os
+
+f_path = "data.csv"
+if os.path.exists(f_path) == True:
+    os.remove(f_path)
 
 GPIO.setmode(GPIO.BCM)
 
@@ -91,13 +97,29 @@ def getAccel():
     z= read_word_sensor(ACCEL_ZOUT)/ 16384.0
     return [x, y, z]
 
+def calc_slope_for_accel_3axis_deg(x, y, z): # degree
+    # θ（シータ）
+    theta = math.atan( x / math.sqrt( y*y + z*z ) )
+    # Ψ（プサイ）
+    psi = math.atan( y / math.sqrt( x*x + z*z ) )
+    # Φ（ファイ）
+    #phi = math.atan( math.sqrt( x*x + y*y ) / z )
+    phi = 0 
+
+    deg_theta = math.degrees( theta )
+    deg_psi   = math.degrees( psi )
+    deg_phi   = math.degrees( phi )
+    return [deg_theta, deg_psi, deg_phi]
+
 def acc_init():
     global theta_variance
  
-    theta_array = [0] * sample_num
+    #theta_array = [0] * sample_num
+    theta_array = [[0.0 for i in range(1)] for j in range(sample_num)]
     for i in range(sample_num):
         ax, ay, az = getAccel()
-        theta_array[i] = ay
+        theta,psi,phi = calc_slope_for_accel_3axis_deg(ax,ay,az)
+        theta_array[i] = theta 
         sleep(meas_interval)
 
     theta_mean = 0
@@ -114,7 +136,8 @@ def acc_init():
 def gyro_init():
     global theta_dot_variance
  
-    theta_dot_array = [0] * sample_num
+    #theta_dot_array = [0] * sample_num
+    theta_dot_array  = [[0.0 for i in range(1)] for j in range(sample_num)]
     for i in range(sample_num):
         gx, gy, gz = getGyro()
         theta_dot_array[i] = gx 
@@ -168,6 +191,8 @@ def update_theta():
     global A_theta
 
     ax, ay, az = getAccel()
+    theta,psi,phi = calc_slope_for_accel_3axis_deg(ax,ay,az)
+
     gx, gy, gz = getGyro()
     theta_dot_gyro = gx 
 
@@ -183,7 +208,7 @@ def update_theta():
     
     C_theta_theta  = [[0.0 for i in range(1)] for j in range(1)]
     mat_mul(C_theta, theta_data_predict, C_theta_theta, 1, 2, 2, 1)
-    delta_y = ay - C_theta_theta[0][0]
+    delta_y = theta - C_theta_theta[0][0]
     delta_theta  = [[0.0 for i in range(1)] for j in range(2)]
     mat_mul_const(G, delta_y, delta_theta, 2, 1)
     mat_add(theta_data_predict, delta_theta, theta_data, 2, 1)
@@ -210,9 +235,15 @@ def update_theta():
     BBT = [[0.0 for i in range(2)] for j in range(2)]
     tran_B_theta = [[0.0 for i in range(2)] for j in range(1)]
     mat_tran(B_theta, tran_B_theta, 2, 1)
+    mat_mul(B_theta, tran_B_theta, BBT, 2, 1, 1, 2)
     BUBT = [[0.0 for i in range(2)] for j in range(2)]
     mat_mul_const(BBT, theta_dot_variance, BUBT, 2, 2)
     mat_add(APAT, BUBT, P_theta_predict, 2, 2)
+
+def write_csv(list):
+    with open(f_path, 'a') as f:
+        writer = csv.writer(f, lineterminator='\n')
+        writer.writerow(list)
 
 if __name__ == '__main__':
     acc_init()
@@ -229,4 +260,11 @@ if __name__ == '__main__':
     while 1:
         update_theta()
         print("theta = " + str(theta_data[0][0]))
+        ax, ay, az = getAccel()
+        theta,psi,phi = calc_slope_for_accel_3axis_deg(ax,ay,az)
+
+        list = []
+        list.append(theta_data[0][0])
+        list.append(theta)
+        write_csv(list)
         sleep(0.05) 
