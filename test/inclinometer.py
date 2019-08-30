@@ -111,6 +111,12 @@ def calc_slope_for_accel_3axis_deg(x, y, z): # degree
     deg_phi   = math.degrees( phi )
     return [deg_theta, deg_psi, deg_phi]
 
+def calc_theta_deg(x, y, z):
+    theta_deg = 0
+    if y != 0:  
+        theta_deg = math.degrees(math.atan( z / y))
+    return theta_deg
+
 def acc_init():
     global theta_variance
  
@@ -118,7 +124,7 @@ def acc_init():
     theta_array = [[0.0 for i in range(1)] for j in range(sample_num)]
     for i in range(sample_num):
         ax, ay, az = getAccel()
-        theta,psi,phi = calc_slope_for_accel_3axis_deg(ax,ay,az)
+        theta = calc_theta_deg(ax,ay,az)
         theta_array[i] = theta 
         sleep(meas_interval)
 
@@ -191,7 +197,7 @@ def update_theta():
     global A_theta
 
     ax, ay, az = getAccel()
-    theta,psi,phi = calc_slope_for_accel_3axis_deg(ax,ay,az)
+    theta = calc_theta_deg(ax,ay,az)
 
     gx, gy, gz = getGyro()
     theta_dot_gyro = gx 
@@ -261,7 +267,7 @@ if __name__ == '__main__':
         update_theta()
         print("theta = " + str(theta_data[0][0]))
         ax, ay, az = getAccel()
-        theta,psi,phi = calc_slope_for_accel_3axis_deg(ax,ay,az)
+        theta = calc_theta_deg(ax,ay,az)
 
         list = []
         list.append(theta_data[0][0])
